@@ -104,6 +104,34 @@ const nodemgrController: FastifyPluginAsync = async (fastify) => {
     const { status, payload } = await proxy('DELETE', `nodes/${encodeURIComponent(name)}`);
     return reply.status(status).send(payload);
   });
+
+  // ---- daemon (服务端生命周期) 代理 ----
+  const DAEMON_ACTIONS = new Set(['install', 'update', 'start', 'restart', 'stop', 'uninstall']);
+
+  // GET /api/nt/daemon/status
+  fastify.get('/daemon/status', async (_request, reply) => {
+    const { status, payload } = await proxy('GET', 'daemon/status');
+    return reply.status(status).send(payload);
+  });
+
+  // POST /api/nt/daemon/:action  body: { engine, url?, purge?, confirm? }
+  fastify.post<{ Params: { action: string }; Body: Record<string, unknown> }>(
+    '/daemon/:action',
+    async (request, reply) => {
+      const action = request.params.action;
+      if (!DAEMON_ACTIONS.has(action)) {
+        return reply.status(400).send({ error: `unsupported daemon action: ${action}` });
+      }
+      const body = (request.body ?? {}) as Record<string, unknown>;
+      const { status, payload } = await proxy('POST', `daemon/${action}`, {
+        engine: typeof body.engine === 'string' ? body.engine : 'mihomo',
+        url: typeof body.url === 'string' ? body.url : undefined,
+        purge: body.purge === true,
+        confirm: body.confirm === true,
+      });
+      return reply.status(status).send(payload);
+    },
+  );
 };
 
 export default nodemgrController;

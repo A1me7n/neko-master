@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mihomo 节点热更新工具</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d27; --border: #2a2f3d;
+    --text: #e6e9f0; --dim: #8b93a7; --accent: #4f8cff; --accent2: #2dd4bf;
+    --danger: #f87171; --ok: #34d399; --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    min-height: 100vh; padding: 24px 16px 60px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  header h1 { font-size: 20px; font-weight: 600; }
+  .badge {
+    font-size: 12px; padding: 3px 10px; border-radius: 20px;
+    border: 1px solid var(--border); color: var(--dim);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  .badge.ok { color: var(--ok); border-color: rgba(52,211,153,.35); }
+  .badge.ok .dot { background: var(--ok); }
+  .badge.bad { color: var(--danger); border-color: rgba(248,113,113,.35); }
+  .badge.bad .dot { background: var(--danger); }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 15px; margin-bottom: 12px; color: var(--text); font-weight: 600; }
+  textarea {
+    width: 100%; min-height: 96px; resize: vertical;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; font-size: 13px; font-family: ui-monospace, Consolas, monospace;
+    line-height: 1.5; outline: none;
+  }
+  textarea:focus { border-color: var(--accent); }
+  .hint { color: var(--dim); font-size: 12px; margin-top: 6px; }
+  .row { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+  .btn {
+    background: var(--accent); color: #fff; border: none;
+    padding: 9px 18px; border-radius: 8px; font-size: 14px;
+    cursor: pointer; font-weight: 500;
+  }
+  .btn:hover { filter: brightness(1.1); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn.danger { background: transparent; border: 1px solid rgba(248,113,113,.4); color: var(--danger); font-size: 12px; padding: 4px 10px; }
+  .btn.small { font-size: 13px; padding: 6px 14px; }
+  label.chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dim); cursor: pointer; }
+  input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; }
+  select {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 13px; max-width: 320px; outline: none;
+  }
+  .msgs { margin-top: 12px; display: none; }
+  .msgs .msg {
+    font-size: 13px; padding: 8px 12px; border-radius: 8px; margin-bottom: 6px;
+    word-break: break-all;
+  }
+  .msg.ok { background: rgba(52,211,153,.1); color: var(--ok); border: 1px solid rgba(52,211,153,.3); }
+  .msg.err { background: rgba(248,113,113,.1); color: var(--danger); border: 1px solid rgba(248,113,113,.3); }
+  .msg.info { background: rgba(79,140,255,.1); color: var(--accent2); border: 1px solid rgba(45,212,191,.25); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--dim); font-weight: 500; padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 6px; border-bottom: 1px solid rgba(42,47,61,.6); }
+  tr:last-child td { border-bottom: none; }
+  .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--dim); }
+  .empty { color: var(--dim); font-size: 13px; text-align: center; padding: 18px 0; }
+  .current { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .current .tag { background: rgba(45,212,191,.12); color: var(--accent2); border: 1px solid rgba(45,212,191,.3); padding: 2px 10px; border-radius: 6px; font-size: 12px; }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: r .7s linear infinite; vertical-align: -2px; }
+  @keyframes r { to { transform: rotate(360deg); } }
+  .footer { color: var(--dim); font-size: 12px; text-align: center; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🐱 mihomo 节点热更新</h1>
+    <span class="badge" id="mihomoBadge"><span class="dot"></span>检查中…</span>
+    <span class="badge" id="groupBadge"></span>
+  </header>
+
+  <!-- 添加 -->
+  <div class="card">
+    <h2>粘贴节点链接</h2>
+    <textarea id="input" placeholder="支持格式：
+vmess://  vless://  trojan://  ss://  ssr://  hysteria2://(hy2://)  tuic://  http://  socks5://
+
+示例：vless://uuid@服务器:443?security=tls#我的节点
+可一次粘贴多行，每行一个节点；重复粘贴同名节点 = 覆盖更新"></textarea>
+    <div class="hint">同一行粘贴多个链接可用空格分隔</div>
+    <div class="row">
+      <button class="btn" id="addBtn" onclick="doAdd()">➕ 添加并生效</button>
+      <label class="chk"><input type="checkbox" id="autoSel" checked> 添加后自动在「🚀 默认代理」中选中（全局流量立即走新节点）</label>
+    </div>
+    <div class="msgs" id="addMsgs"></div>
+  </div>
+
+  <!-- 当前选择 -->
+  <div class="card">
+    <h2>当前代理选择</h2>
+    <div class="current">
+      <select id="mainSelect" onchange="doSelect()"></select>
+      <button class="btn small ghost" onclick="loadState()">🔄 刷新</button>
+    </div>
+    <div class="msgs" id="selMsgs"></div>
+  </div>
+
+  <!-- 节点列表 -->
+  <div class="card">
+    <h2>自建节点列表 <span style="color:var(--dim);font-weight:400;font-size:12px" id="nodeCount"></span></h2>
+    <table>
+      <thead><tr><th style="width:30%">名称</th><th>类型</th><th>服务器</th><th>端口</th><th style="width:60px"></th></tr></thead>
+      <tbody id="nodeBody"></tbody>
+    </table>
+    <div class="empty" id="nodeEmpty">暂无自建节点 —— 在上方粘贴你的节点即可</div>
+  </div>
+
+  <div class="footer">mihomo-node-tool · 修改前自动备份配置到 backups/ · 需要帮助随时找我</div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let state = null;
+
+async function api(method, path, body) {
+  const opt = { method, headers: {} };
+  if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  const r = await fetch(path, opt);
+  let j = {};
+  try { j = await r.json(); } catch (e) {}
+  if (!r.ok && !j.added) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+
+function showMsgs(el, items) {
+  if (!items || !items.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  el.innerHTML = items.map(m =>
+    `<div class="msg ${m.type}">${escapeHtml(m.text)}</div>`).join('');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function loadState() {
+  try {
+    state = await api('GET', '/api/state');
+    const m = state.mihomo;
+    const badge = $('mihomoBadge');
+    badge.className = 'badge ' + (m.connected ? 'ok' : 'bad');
+    badge.innerHTML = `<span class="dot"></span>mihomo ${m.connected ? '已连接 v' + escapeHtml(m.version) : '未连接：' + escapeHtml(m.connected === false ? '' : '')}`;
+    $('groupBadge').textContent = '主组: ' + state.main_group;
+    renderSelect(state.main_now, state.main_options);
+    renderNodes(state.nodes);
+  } catch (e) {
+    $('mihomoBadge').className = 'badge bad';
+    $('mihomoBadge').innerHTML = '<span class="dot"></span>服务错误';
+    showMsgs($('addMsgs'), [{type:'err', text: String(e)}]);
+  }
+}
+
+function renderSelect(now, options) {
+  const sel = $('mainSelect');
+  sel.innerHTML = '';
+  (options || []).forEach(o => {
+    const op = document.createElement('option');
+    op.value = o; op.textContent = o;
+    if (o === now) op.selected = true;
+    sel.appendChild(op);
+  });
+}
+
+function renderNodes(nodes) {
+  const list = nodes || [];
+  $('nodeCount').textContent = `(${list.length})`;
+  const tb = $('nodeBody');
+  tb.innerHTML = '';
+  $('nodeEmpty').style.display = list.length ? 'none' : 'block';
+  list.forEach(n => {
+    const tr = document.createElement('tr');
+    const nameTd = document.createElement('td');
+    nameTd.textContent = n.name;
+    const tTd = document.createElement('td');
+    tTd.textContent = n.type;
+    const sTd = document.createElement('td');
+    sTd.className = 'mono'; sTd.textContent = n.server || '-';
+    const pTd = document.createElement('td');
+    pTd.className = 'mono'; pTd.textContent = n.port || '-';
+    const aTd = document.createElement('td');
+    const del = document.createElement('button');
+    del.className = 'btn danger'; del.textContent = '删除';
+    del.onclick = () => doDelete(n.name);
+    aTd.appendChild(del);
+    tr.append(nameTd, tTd, sTd, pTd, aTd);
+    tb.appendChild(tr);
+  });
+}
+
+async function doAdd() {
+  const text = $('input').value.trim();
+  if (!text) { showMsgs($('addMsgs'), [{type:'err', text:'请先粘贴节点链接'}]); return; }
+  const btn = $('addBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 解析并热加载中…';
+  showMsgs($('addMsgs'), []);
+  try {
+    const r = await api('POST', '/api/nodes', { text, auto_select: $('autoSel').checked });
+    const msgs = [];
+    (r.added || []).forEach(a => msgs.push({ type: 'ok', text: `✅ 已添加 [${a.name}] (${a.type} ${a.server}:${a.port})` }));
+    const meta = r.meta || {};
+    if (r.added && r.added.length) {
+      msgs.push({ type: 'info', text: `热加载完成(${meta.reload || ''}) | 配置已备份: ${meta.backup || ''}` });
+      if (meta.select) msgs.push({ type: 'info', text: meta.select });
+    }
+    (r.errors || []).forEach(e => msgs.push({ type: 'err', text: '⚠️ ' + e }));
+    if (!r.added.length && !r.errors.length) msgs.push({ type: 'err', text: '没有识别到可解析的节点链接' });
+    showMsgs($('addMsgs'), msgs);
+    $('input').value = '';
+    await loadState();
+  } catch (e) {
+    showMsgs($('addMsgs'), [{type:'err', text: String(e)}]);
+  } finally {
+    btn.disabled = false; btn.textContent = '➕ 添加并生效';
+  }
+}
+
+async function doSelect() {
+  const name = $('mainSelect').value;
+  if (!name) return;
+  showMsgs($('selMsgs'), []);
+  try {
+    const r = await api('POST', '/api/select', { name });
+    showMsgs($('selMsgs'), [{ type: 'ok', text: `✅ 已切换到: ${r.now}` }]);
+    await loadState();
+  } catch (e) {
+    showMsgs($('selMsgs'), [{type:'err', text: String(e)}]);
+  }
+}
+
+async function doDelete(name) {
+  if (!confirm(`确定删除节点「${name}」？\n删除后如它正在被使用，会自动切回其他节点`)) return;
+  showMsgs($('selMsgs'), []);
+  try {
+    const r = await api('DELETE', '/api/nodes/' + encodeURIComponent(name));
+    showMsgs($('selMsgs'), [{ type: 'ok', text: `🗑 已删除 [${name}] | ${r.reload || ''}` }]);
+    await loadState();
+  } catch (e) {
+    showMsgs($('selMsgs'), [{type:'err', text: String(e)}]);
+  }
+}
+
+loadState();
+setInterval(() => { loadState().catch(() => {}); }, 15000);
+</script>
+</body>
+</html>

@@ -14,7 +14,8 @@
     "health": "健康",
     "settings": "设置",
     "showcaseMode": "演示模式",
-    "nodes": "节点"
+    "nodes": "节点",
+    "daemon": "服务端"
   },
   "header": {
     "title": "Neko Master",
@@ -594,5 +595,31 @@
     "delete": "删除",
     "deleteConfirm": "确定删除节点「{name}」？",
     "deletedOk": "已删除 {name}"
+  },
+  "daemon": {
+    "title": "服务端管理",
+    "refresh": "刷新",
+    "loading": "检测中…",
+    "running": "运行中",
+    "stopped": "已停止",
+    "notInstalled": "未安装",
+    "autostart": "开机自启",
+    "unitManaged": "systemd 托管",
+    "updateHint": "下载最新版本并重启",
+    "busy": "执行中…",
+    "act": {
+      "install": "安装",
+      "update": "更新",
+      "start": "启动",
+      "restart": "重启",
+      "stop": "停止",
+      "uninstall": "卸载"
+    },
+    "actionOk": "{action} 成功",
+    "actionFailed": "{action} 失败",
+    "uninstallConfirm": "确定卸载 {name}？\n\n将停止并移除 systemd 服务与二进制文件（自动备份到 /var/lib/neko-host-tool/backups/），配置文件默认保留。",
+    "loadFailed": "获取服务端状态失败",
+    "logTitle": "操作记录",
+    "logEmpty": "暂无操作记录"
   }
 }

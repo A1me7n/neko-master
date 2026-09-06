@@ -19,6 +19,7 @@ import {
   ShieldAlert,
   HeartPulse,
   PlugZap,
+  ServerCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ const NAV_ITEMS = [
   { id: "devices", icon: Smartphone },
   { id: "health", icon: HeartPulse },
   { id: "nodes", icon: PlugZap },
+  { id: "daemon", icon: ServerCog },
 ];
 
 export function Navigation({

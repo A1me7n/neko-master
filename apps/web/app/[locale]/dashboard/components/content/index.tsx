@@ -14,6 +14,7 @@ import { InteractiveDeviceStats } from "@/components/features/devices";
 import { InteractiveRuleStats } from "@/components/features/rules";
 import { HealthContent } from "@/components/features/health";
 import { NodesContent } from "@/components/features/nodes";
+import { DaemonContent } from "@/components/features/daemon";
 import { WorldTrafficMap, CountryTrafficList } from "@/components/features/countries";
 import { DomainsTable, IPsTable } from "@/components/features/stats/table";
 import { Button } from "@/components/ui/button";
@@ -391,6 +392,8 @@ export function Content({
         return <HealthContent timeRange={timeRange} />;
       case "nodes":
         return <NodesContent />;
+      case "daemon":
+        return <DaemonContent />;
       default:
         return (
           <OverviewContent

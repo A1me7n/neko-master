@@ -14,7 +14,8 @@
     "health": "Health",
     "settings": "Settings",
     "showcaseMode": "Showcase Mode",
-    "nodes": "Nodes"
+    "nodes": "Nodes",
+    "daemon": "Servers"
   },
   "header": {
     "title": "Neko Master",
@@ -595,5 +596,31 @@
     "delete": "Delete",
     "deleteConfirm": "Delete node \"{name}\"?",
     "deletedOk": "Deleted {name}"
+  },
+  "daemon": {
+    "title": "Server Management",
+    "refresh": "Refresh",
+    "loading": "Detecting…",
+    "running": "Running",
+    "stopped": "Stopped",
+    "notInstalled": "Not installed",
+    "autostart": "Auto-start",
+    "unitManaged": "systemd managed",
+    "updateHint": "Fetch latest version and restart",
+    "busy": "Working…",
+    "act": {
+      "install": "Install",
+      "update": "Update",
+      "start": "Start",
+      "restart": "Restart",
+      "stop": "Stop",
+      "uninstall": "Uninstall"
+    },
+    "actionOk": "{action} succeeded",
+    "actionFailed": "{action} failed",
+    "uninstallConfirm": "Uninstall {name}?\n\nThe systemd unit and binary will be removed (backed up to /var/lib/neko-host-tool/backups/); the config directory is kept.",
+    "loadFailed": "Failed to load server status",
+    "logTitle": "Operation Log",
+    "logEmpty": "No operations yet"
   }
 }
