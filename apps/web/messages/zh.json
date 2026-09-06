@@ -13,7 +13,8 @@
     "network": "网络",
     "health": "健康",
     "settings": "设置",
-    "showcaseMode": "演示模式"
+    "showcaseMode": "演示模式",
+    "nodes": "节点"
   },
   "header": {
     "title": "Neko Master",
@@ -169,7 +170,6 @@
     "ipCount": "IP数",
     "proxy": "代理节点",
     "proxyTraffic": "代理节点流量明细",
-
     "domainsCount": "个域名",
     "showing": "显示",
     "of": "共",
@@ -563,5 +563,36 @@
     "noBackends": "暂无节点健康记录",
     "noBackendsHint": "系统每分钟自动检查所有已启用的后端节点，检查结果将在此处显示",
     "checkInterval": "系统每分钟记录一次健康检查结果，数据空缺表示采集服务中断"
+  },
+  "nodes": {
+    "statusTitle": "节点状态",
+    "refresh": "刷新",
+    "loading": "加载中…",
+    "connected": "mihomo 已连接",
+    "disconnected": "mihomo 未连接",
+    "mainGroup": "主组",
+    "currentSelect": "当前代理选择（切换即生效）",
+    "selectPlaceholder": "选择节点…",
+    "selectFailed": "切换失败",
+    "selectedOk": "已切换到 {name}",
+    "addTitle": "添加节点（热更新）",
+    "pastePlaceholder": "粘贴节点链接，每行一个…\n支持: vmess:// vless:// trojan:// ss:// ssr:// hysteria2:// tuic:// http:// socks5://\n同名节点重复粘贴 = 覆盖更新",
+    "addBtn": "添加并生效",
+    "adding": "处理中…",
+    "autoSelect": "添加后自动选中（全局流量立即走新节点）",
+    "pasteHint": "节点链接会自动解析为 mihomo 配置并热加载，修改前自动备份。",
+    "addedOk": "已添加: {name}",
+    "noNodeParsed": "没有识别到可解析的节点链接",
+    "loadFailed": "获取状态失败",
+    "emptyInput": "请先粘贴节点链接",
+    "listTitle": "自建节点",
+    "empty": "暂无自建节点，在上方粘贴即可添加",
+    "colName": "名称",
+    "colType": "类型",
+    "colServer": "服务器",
+    "colPort": "端口",
+    "delete": "删除",
+    "deleteConfirm": "确定删除节点「{name}」？",
+    "deletedOk": "已删除 {name}"
   }
 }

@@ -13,7 +13,8 @@
     "network": "Network",
     "health": "Health",
     "settings": "Settings",
-    "showcaseMode": "Showcase Mode"
+    "showcaseMode": "Showcase Mode",
+    "nodes": "Nodes"
   },
   "header": {
     "title": "Neko Master",
@@ -170,7 +171,6 @@
     "ipCount": "IPs",
     "proxy": "Proxy",
     "proxyTraffic": "Proxy Traffic Breakdown",
-
     "domainsCount": "domains",
     "showing": "Showing",
     "of": "of",
@@ -564,5 +564,36 @@
     "noBackends": "No health records yet",
     "noBackendsHint": "Health checks run automatically every minute for all enabled backends and will appear here",
     "checkInterval": "Health checks are recorded once per minute. Gaps indicate the collector service was interrupted."
+  },
+  "nodes": {
+    "statusTitle": "Gateway Status",
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "connected": "mihomo connected",
+    "disconnected": "mihomo disconnected",
+    "mainGroup": "Main group",
+    "currentSelect": "Active proxy (switch applies instantly)",
+    "selectPlaceholder": "Select node…",
+    "selectFailed": "Switch failed",
+    "selectedOk": "Switched to {name}",
+    "addTitle": "Add Node (hot update)",
+    "pastePlaceholder": "Paste node links, one per line…\nSupported: vmess:// vless:// trojan:// ss:// ssr:// hysteria2:// tuic:// http:// socks5://\nRe-pasting the same name overwrites the node",
+    "addBtn": "Add & Apply",
+    "adding": "Working…",
+    "autoSelect": "Auto-select after adding (global traffic switches immediately)",
+    "pasteHint": "Links are parsed into the mihomo config and hot-reloaded; a backup is made before every change.",
+    "addedOk": "Added: {name}",
+    "noNodeParsed": "No parseable node link found",
+    "loadFailed": "Failed to load status",
+    "emptyInput": "Paste a node link first",
+    "listTitle": "Managed Nodes",
+    "empty": "No managed nodes yet — paste a link above to add one",
+    "colName": "Name",
+    "colType": "Type",
+    "colServer": "Server",
+    "colPort": "Port",
+    "delete": "Delete",
+    "deleteConfirm": "Delete node \"{name}\"?",
+    "deletedOk": "Deleted {name}"
   }
 }
