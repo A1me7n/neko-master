@@ -84,10 +84,22 @@ class Engine:
     def _restart(self): return _systemctl(["restart", self.unit])
 
     def ensure_unit(self):
+        """确保 systemd unit 存在且 ExecStart 与预期一致。
+        注意: dpkg 升级可能覆盖 /lib 下的 unit (例如 mihomo deb 默认 -d /etc/mihomo)，
+        若 ExecStart 不匹配则备份并重写为受管模板，避免重启后加载错误配置。"""
         unit_path = f"/etc/systemd/system/{self.unit}.service"
-        if os.path.exists(unit_path):
-            return
         exe = " ".join([self.bin] + self.run_args)
+        expected_exec = f"ExecStart={exe}"
+        if os.path.exists(unit_path):
+            with open(unit_path) as f:
+                content = f.read()
+            if expected_exec in content:
+                return
+            # 备份被外部工具覆盖的 unit
+            bak = os.path.join(BACKUP_ROOT, f"{self.key}-unit-{time.strftime('%Y%m%d-%H%M%S')}.service")
+            os.makedirs(BACKUP_ROOT, exist_ok=True)
+            shutil.copy2(unit_path, bak)
+            print(f"[daemon_mgr] unit ExecStart 不匹配，已备份旧 unit 至 {bak}")
         unit = f"""[Unit]
 Description={self.name} Daemon (managed by neko-host-tool)
 After=network.target
@@ -95,6 +107,7 @@ After=network.target
 [Service]
 Type=simple
 ExecStart={exe}
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
 
