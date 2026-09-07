@@ -84,6 +84,7 @@
   .msg.ok { background: rgba(52,211,153,.1); color: var(--ok); border: 1px solid rgba(52,211,153,.3); }
   .msg.err { background: rgba(248,113,113,.1); color: var(--danger); border: 1px solid rgba(248,113,113,.3); }
   .msg.info { background: rgba(79,140,255,.1); color: var(--accent2); border: 1px solid rgba(45,212,191,.25); }
+  .msg.warn { background: rgba(251,191,36,.1); color: var(--warn); border: 1px solid rgba(251,191,36,.3); }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th { text-align: left; color: var(--dim); font-weight: 500; padding: 8px 6px; border-bottom: 1px solid var(--border); }
   td { padding: 8px 6px; border-bottom: 1px solid rgba(42,47,61,.6); vertical-align: top; }
@@ -146,6 +147,8 @@
   <div class="tabs">
     <button class="tab active" id="tabNodesBtn" onclick="switchTab('nodes')">📡 节点管理</button>
     <button class="tab" id="tabRulesBtn" onclick="switchTab('rules')">📜 分流规则</button>
+    <button class="tab" id="tabDiagBtn" onclick="switchTab('diag')">🔬 验证中心</button>
+    <button class="tab" id="tabOpsBtn" onclick="switchTab('ops')">🛠 运维中心</button>
   </div>
 
   <!-- ================= 节点管理 ================= -->
@@ -240,6 +243,93 @@ vmess://  vless://  trojan://  ss://  ssr://  hysteria2://(hy2://)  tuic://  htt
     </div>
   </section>
 
+  <!-- ================= 验证中心 ================= -->
+  <section id="panelDiag" class="hidden">
+    <!-- 出口信息 -->
+    <div class="card">
+      <h2>🌐 当前出口</h2>
+      <div class="current" id="egressBox">
+        <span class="tag" id="egMain"></span>
+        <span class="tag" id="egIp"></span>
+      </div>
+      <div class="msgs" id="egMsgs"></div>
+      <div class="row">
+        <button class="btn small" onclick="doEgress()">🔄 重新检测出口</button>
+        <span class="hint" style="margin:0">代理出口 IP = 你当前节点所在位置；直连出口 = 不走代理时的 IP（TUN 开启时两者可能相同）</span>
+      </div>
+    </div>
+
+    <!-- 延迟测速 -->
+    <div class="card">
+      <h2>⚡ 节点延迟测速 <span style="color:var(--dim);font-weight:400;font-size:12px" id="speedNote"></span></h2>
+      <div class="msgs" id="speedMsgs"></div>
+      <div class="row">
+        <button class="btn" id="speedBtn" onclick="doSpeed()">🚀 测速全部节点/组</button>
+        <span class="hint" style="margin:0">并发测速，约几秒完成；绿色=通畅</span>
+      </div>
+      <table style="margin-top:10px;display:none" id="speedTable">
+        <thead><tr><th style="width:30%">名称</th><th style="width:80px">类型</th><th>延迟</th></tr></thead>
+        <tbody id="speedBody"></tbody>
+      </table>
+    </div>
+
+    <!-- 规则追踪 -->
+    <div class="card">
+      <h2>🛰 规则追踪 <span style="color:var(--dim);font-weight:400;font-size:12px">输入一个域名，看它最终走哪条规则、哪个节点</span></h2>
+      <div class="row">
+        <input type="text" id="traceInput" placeholder="例如: www.youtube.com / chatgpt.com / github.com" style="flex:1;min-width:240px" onkeydown="if(event.key==='Enter')doTrace()">
+        <button class="btn" id="traceBtn" onclick="doTrace()">🔍 追踪</button>
+      </div>
+      <div class="msgs" id="traceMsgs"></div>
+      <div id="traceResult" style="display:none;margin-top:12px;border:1px solid var(--border);border-radius:8px;padding:14px"></div>
+    </div>
+  </section>
+
+  <!-- ================= 运维中心 ================= -->
+  <section id="panelOps" class="hidden">
+    <!-- 活动连接 -->
+    <div class="card">
+      <h2>🔗 活动连接 <span style="color:var(--dim);font-weight:400;font-size:12px" id="connCount"></span></h2>
+      <div class="row">
+        <button class="btn small" onclick="doConns()">🔄 刷新连接</button>
+        <button class="btn small danger" onclick="doCloseAll()">⛔ 断开全部连接</button>
+        <span class="hint" style="margin:0">正在访问的流量会显示在这里，含命中规则与策略链；可单独断开某条</span>
+      </div>
+      <div class="msgs" id="connMsgs"></div>
+      <div style="overflow-x:auto">
+        <table style="margin-top:8px">
+          <thead><tr><th>目标</th><th style="width:80px">来源IP</th><th style="width:90px">进程</th><th style="width:110px">命中规则</th><th style="width:110px">策略链</th><th style="width:90px">流量↓</th><th style="width:64px"></th></tr></thead>
+          <tbody id="connBody"></tbody>
+        </table>
+        <div class="empty" id="connEmpty">暂无活动连接</div>
+      </div>
+    </div>
+
+    <!-- 配置备份/回滚 -->
+    <div class="card">
+      <h2>🕐 配置备份 / 回滚 <span style="color:var(--dim);font-weight:400;font-size:12px" id="bkCount"></span></h2>
+      <div class="hint" style="margin-bottom:8px">每次改动自动备份（保留30份）。选一份备份点「回滚」即恢复到那个时刻的配置（回滚前会自动再备份当前状态，安全）。</div>
+      <div class="msgs" id="bkMsgs"></div>
+      <table id="bkTable" style="display:none">
+        <thead><tr><th>备份文件</th><th style="width:110px">时间</th><th style="width:90px">大小</th><th style="width:80px"></th></tr></thead>
+        <tbody id="bkBody"></tbody>
+      </table>
+      <div class="empty" id="bkEmpty">加载中…</div>
+    </div>
+
+    <!-- 完整配置编辑 -->
+    <div class="card">
+      <h2>📝 完整配置编辑 <span style="color:var(--dim);font-weight:400;font-size:12px">高级功能：直接编辑整个 config.yaml（secret 已自动打码，保存时自动还原并校验）</span></h2>
+      <div class="row" style="margin-top:4px">
+        <button class="btn small ghost" onclick="loadCfg()">📂 载入当前配置</button>
+        <button class="btn small" id="cfgSaveBtn" onclick="saveCfg()" disabled>💾 保存并热加载</button>
+        <span class="hint" style="margin:0">⚠️ 保存前会备份 + mihomo -t 校验，失败自动回滚</span>
+      </div>
+      <div class="msgs" id="cfgMsgs"></div>
+      <textarea id="cfgArea" style="min-height:280px;margin-top:10px;display:none" placeholder="点击「载入当前配置」后在这里编辑…" spellcheck="false"></textarea>
+    </div>
+  </section>
+
   <div class="footer">mihomo-node-tool · 修改前自动备份配置到 backups/ · 规则改动自动校验(mihomo -t)，失败即回滚 · 需要帮助随时找我</div>
 </div>
 
@@ -326,9 +416,15 @@ function escapeHtml(s) {
 function switchTab(name) {
   $('tabNodesBtn').classList.toggle('active', name === 'nodes');
   $('tabRulesBtn').classList.toggle('active', name === 'rules');
+  $('tabDiagBtn').classList.toggle('active', name === 'diag');
+  $('tabOpsBtn').classList.toggle('active', name === 'ops');
   $('panelNodes').classList.toggle('hidden', name !== 'nodes');
   $('panelRules').classList.toggle('hidden', name !== 'rules');
+  $('panelDiag').classList.toggle('hidden', name !== 'diag');
+  $('panelOps').classList.toggle('hidden', name !== 'ops');
   if (name === 'rules') loadRules();
+  if (name === 'diag') { doEgress(); }
+  if (name === 'ops') { doConns(); doBkps(); }
 }
 
 /* ---------- 节点管理 ---------- */
@@ -657,6 +753,233 @@ async function doRuleDelete(r) {
     await loadRules();
   } catch (e) {
     showMsgs($('ruleMsgs'), [{type:'err', text: String(e)}]);
+  }
+}
+
+/* ---------- 验证中心 ---------- */
+async function doEgress() {
+  showMsgs($('egMsgs'), [{ type: 'info', text: '检测中…' }]);
+  try {
+    const d = await api('GET', '/api/diag/egress');
+    const html = [];
+    if (d.main_group) html.push(`<b>${escapeHtml(d.main_group)}</b> → ${escapeHtml(d.main_now || '?')}`);
+    if (d.proxy_ip) {
+      html.push(`🌏 代理出口: <b>${escapeHtml(d.proxy_ip)}</b> ${escapeHtml(d.proxy_region || '')} ${escapeHtml(d.proxy_org || '')}`);
+    }
+    if (d.direct_ip) html.push(`🏠 直连出口: ${escapeHtml(d.direct_ip)}`);
+    $('egMain').textContent = '主组: ' + (d.main_group || '?') + ' → ' + (d.main_now || '?');
+    $('egIp').textContent = '代理出口: ' + (d.proxy_ip || '检测失败') + (d.proxy_region ? ' ' + d.proxy_region : '') + (d.proxy_org ? ' (' + d.proxy_org + ')' : '');
+    showMsgs($('egMsgs'), []);
+    if (d.egress_error) showMsgs($('egMsgs'), [{ type: 'warn', text: '提示: ' + d.egress_error }]);
+  } catch (e) {
+    showMsgs($('egMsgs'), [{ type: 'err', text: String(e) }]);
+  }
+}
+
+async function doSpeed() {
+  const btn = $('speedBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 测速中(约10-20s)…';
+  showMsgs($('speedMsgs'), []);
+  $('speedTable').style.display = 'none';
+  try {
+    const d = await api('GET', '/api/diag/speed');
+    const list = d.results || [];
+    $('speedNote').textContent = `(${list.length} 项 · ${d.url || ''})`;
+    const tb = $('speedBody');
+    tb.innerHTML = '';
+    const ok = list.filter(r => r.delay_ms !== undefined);
+    const bad = list.filter(r => r.delay_ms === undefined);
+    const rows = ok.concat(bad);
+    rows.forEach(r => {
+      const tr = document.createElement('tr');
+      const n = document.createElement('td'); n.textContent = r.name;
+      const ty = document.createElement('td'); ty.className = 'mono'; ty.textContent = r.type;
+      const dl = document.createElement('td');
+      if (r.delay_ms !== undefined) {
+        dl.innerHTML = `<span style="color:${r.delay_ms < 300 ? 'var(--ok)' : r.delay_ms < 800 ? 'var(--warn)' : 'var(--danger)'}">⚡ ${r.delay_ms} ms</span>`;
+      } else {
+        dl.innerHTML = `<span style="color:var(--danger)">✖ ${escapeHtml(String(r.error || '超时/失败'))}</span>`;
+      }
+      tr.append(n, ty, dl);
+      tb.appendChild(tr);
+    });
+    $('speedTable').style.display = '';
+    if (!rows.length) showMsgs($('speedMsgs'), [{ type: 'err', text: '没有可测速的节点/组' }]);
+  } catch (e) {
+    showMsgs($('speedMsgs'), [{ type: 'err', text: String(e) }]);
+  } finally {
+    btn.disabled = false; btn.textContent = '🚀 测速全部节点/组';
+  }
+}
+
+async function doTrace() {
+  const domain = $('traceInput').value.trim();
+  if (!domain) { showMsgs($('traceMsgs'), [{ type: 'err', text: '请输入域名' }]); return; }
+  const btn = $('traceBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 追踪中(最多12s)…';
+  showMsgs($('traceMsgs'), []);
+  const box = $('traceResult');
+  box.style.display = 'none';
+  try {
+    const d = await api('POST', '/api/diag/trace', { domain });
+    if (d.error) {
+      showMsgs($('traceMsgs'), [{ type: 'warn', text: '⚠️ ' + d.error + (d.hint ? '\n' + d.hint : '') }]);
+      return;
+    }
+    const chain = (d.chains || []).slice().reverse().map(escapeHtml).join(' → ');
+    box.innerHTML = `
+      <div style="font-size:13px;margin-bottom:8px">🛰 <b>${escapeHtml(d.domain)}</b></div>
+      <div class="ruletxt">命中规则: <b>${escapeHtml(d.rule || '(无)')}</b>${d.rule_payload ? ' (<span class="mono">' + escapeHtml(d.rule_payload) + '</span>)' : ''}</div>
+      <div class="ruletxt" style="margin-top:4px">策略链: <span style="color:var(--accent2)">${chain || '(直连)'}</span></div>
+      <div class="hint" style="margin-top:6px">${escapeHtml(d.process || '') ? '进程: ' + escapeHtml(d.process) + ' · ' : ''}${escapeHtml(d.type || '')}${d.network ? '/' + escapeHtml(d.network) : ''}</div>`;
+    box.style.display = '';
+  } catch (e) {
+    showMsgs($('traceMsgs'), [{ type: 'err', text: String(e) }]);
+  } finally {
+    btn.disabled = false; btn.textContent = '🔍 追踪';
+  }
+}
+
+/* ---------- 运维中心 ---------- */
+let connAuto = null;
+
+async function doConns() {
+  try {
+    const d = await api('GET', '/api/diag/connections?limit=80');
+    $('connCount').textContent = `(${d.total})`;
+    const list = d.connections || [];
+    const tb = $('connBody');
+    tb.innerHTML = '';
+    $('connEmpty').style.display = list.length ? 'none' : 'block';
+    $('connEmpty').textContent = d.error ? String(d.error) : '暂无活动连接';
+    list.forEach(c => {
+      const tr = document.createElement('tr');
+      const host = document.createElement('td');
+      host.className = 'mono';
+      host.textContent = (c.host || c.dest_ip || '?').slice(0, 60);
+      const src = document.createElement('td');
+      src.className = 'mono'; src.textContent = (c.source_ip || '') + (c.source_port ? ':' + c.source_port : '');
+      const proc = document.createElement('td');
+      proc.textContent = c.process || '-';
+      const rule = document.createElement('td');
+      rule.className = 'mono'; rule.textContent = (c.rule || '-') + (c.rule_payload ? '(' + c.rule_payload.slice(0, 18) + ')' : '');
+      const chain = document.createElement('td');
+      chain.className = 'mono';
+      chain.textContent = (c.chains || []).slice().reverse().join(' > ').slice(0, 40) || '直连';
+      const dl = document.createElement('td');
+      dl.className = 'mono'; dl.textContent = fmtBytes(c.download || 0);
+      const act = document.createElement('td');
+      const btn = document.createElement('button');
+      btn.className = 'btn danger'; btn.textContent = '断开';
+      btn.onclick = () => closeConn(c.id);
+      act.appendChild(btn);
+      tr.append(host, src, proc, rule, chain, dl, act);
+      tb.appendChild(tr);
+    });
+  } catch (e) {
+    $('connEmpty').textContent = String(e);
+    $('connEmpty').style.display = '';
+  }
+}
+
+function fmtBytes(b) {
+  if (b < 1024) return b + 'B';
+  if (b < 1048576) return (b / 1024).toFixed(1) + 'KB';
+  return (b / 1048576).toFixed(1) + 'MB';
+}
+
+async function closeConn(id) {
+  showMsgs($('connMsgs'), []);
+  try {
+    const r = await api('DELETE', '/api/diag/connections/' + encodeURIComponent(id));
+    showMsgs($('connMsgs'), [{ type: 'ok', text: r.ok ? '✅ 已断开该连接' : (r.error || '失败') }]);
+    await doConns();
+  } catch (e) {
+    showMsgs($('connMsgs'), [{ type: 'err', text: String(e) }]);
+  }
+}
+
+async function doCloseAll() {
+  if (!confirm('确定断开全部活动连接？')) return;
+  showMsgs($('connMsgs'), []);
+  try {
+    const r = await api('POST', '/api/diag/connections/close-all', {});
+    showMsgs($('connMsgs'), [{ type: 'ok', text: r.ok ? '✅ ' + (r.message || '已全部断开') : (r.error || '失败') }]);
+    await doConns();
+  } catch (e) {
+    showMsgs($('connMsgs'), [{ type: 'err', text: String(e) }]);
+  }
+}
+
+async function doBkps() {
+  try {
+    const d = await api('GET', '/api/diag/backups');
+    $('bkCount').textContent = `(${d.backups.length})`;
+    const tb = $('bkBody');
+    tb.innerHTML = '';
+    $('bkTable').style.display = d.backups.length ? '' : 'none';
+    $('bkEmpty').style.display = d.backups.length ? 'none' : 'block';
+    $('bkEmpty').textContent = d.backups.length ? '' : '暂无备份';
+    d.backups.forEach(b => {
+      const tr = document.createElement('tr');
+      const fn = document.createElement('td');
+      fn.className = 'mono'; fn.textContent = b.file;
+      const tm = document.createElement('td');
+      tm.className = 'mono'; tm.textContent = b.mtime;
+      const sz = document.createElement('td');
+      sz.className = 'mono'; sz.textContent = (b.size / 1024).toFixed(1) + ' KB';
+      const ac = document.createElement('td');
+      const btn = document.createElement('button');
+      btn.className = 'btn danger'; btn.textContent = '回滚';
+      btn.onclick = () => restoreBk(b.file);
+      ac.appendChild(btn);
+      tr.append(fn, tm, sz, ac);
+      tb.appendChild(tr);
+    });
+  } catch (e) {
+    $('bkEmpty').textContent = '加载失败: ' + e;
+    $('bkEmpty').style.display = '';
+  }
+}
+
+async function restoreBk(file) {
+  if (!confirm('确定回滚到 ' + file + '？\n⚠️ 回滚前会自动备份当前配置；校验失败自动恢复')) return;
+  showMsgs($('bkMsgs'), []);
+  try {
+    const r = await api('POST', '/api/diag/backups/restore', { file });
+    showMsgs($('bkMsgs'), [{ type: 'ok', text: '✅ ' + (r.message || '已回滚') + (r.safety_backup ? ' | 当前状态已备份为 ' + r.safety_backup : '') }]);
+    await doBkps();
+  } catch (e) {
+    showMsgs($('bkMsgs'), [{ type: 'err', text: String(e) }]);
+  }
+}
+
+async function loadCfg() {
+  showMsgs($('cfgMsgs'), []);
+  try {
+    const d = await api('GET', '/api/diag/config');
+    $('cfgArea').value = d.content;
+    $('cfgArea').style.display = '';
+    $('cfgSaveBtn').disabled = false;
+    showMsgs($('cfgMsgs'), [{ type: 'info', text: '已载入配置' + (d.secret_masked ? '（secret 已打码，保存时自动还原）' : '') + ' — 编辑完点保存' }]);
+  } catch (e) {
+    showMsgs($('cfgMsgs'), [{ type: 'err', text: String(e) }]);
+  }
+}
+
+async function saveCfg() {
+  const content = $('cfgArea').value;
+  if (!content.trim()) { showMsgs($('cfgMsgs'), [{ type: 'err', text: '配置为空' }]); return; }
+  const btn = $('cfgSaveBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 校验并热加载中…';
+  showMsgs($('cfgMsgs'), []);
+  try {
+    const r = await api('POST', '/api/diag/config', { content });
+    showMsgs($('cfgMsgs'), [{ type: 'ok', text: '✅ ' + (r.message || '已保存') + (r.backup ? ' | 备份: ' + r.backup : '') }]);
+  } catch (e) {
+    showMsgs($('cfgMsgs'), [{ type: 'err', text: String(e) }]);
+  } finally {
+    btn.disabled = false; btn.textContent = '💾 保存并热加载';
   }
 }
 

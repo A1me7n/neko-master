@@ -27,6 +27,7 @@ except ImportError:
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from node_parser import parse_node_link, parse_multi
 from daemon_mgr import run_action as daemon_run_action, status_all as daemon_status_all
+import diag_mgr
 
 CONFIG_PATH = os.environ.get("MIHOMO_CONFIG", "/root/.config/mihomo/config.yaml")
 BACKUP_DIR = os.path.join(os.path.dirname(CONFIG_PATH), "backups")
@@ -627,6 +628,32 @@ class Handler(BaseHTTPRequestHandler):
                              "groups": groups, "types": RULE_TYPES})
         elif path == "/api/providers":
             self._send(200, {"providers": list_providers()})
+        elif path == "/api/diag/egress":
+            try:
+                self._send(200, diag_mgr.egress_info())
+            except Exception as e:
+                self._send(500, {"error": str(e)})
+        elif path == "/api/diag/speed":
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            targets = [t for t in (qs.get("targets", [""])[0].split(",") if qs.get("targets") else []) if t]
+            try:
+                self._send(200, diag_mgr.speedtest(targets or None))
+            except Exception as e:
+                self._send(500, {"error": str(e)})
+        elif path == "/api/diag/connections":
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                limit = int((qs.get("limit") or ["100"])[0])
+            except Exception:
+                limit = 100
+            self._send(200, diag_mgr.list_connections(limit))
+        elif path == "/api/diag/backups":
+            self._send(200, diag_mgr.list_backups())
+        elif path == "/api/diag/config":
+            try:
+                self._send(200, diag_mgr.read_config())
+            except Exception as e:
+                self._send(500, {"error": str(e)})
         elif path.startswith("/api/providers/"):
             m = re.match(r"^/api/providers/(.+)$", path)
             if m:
@@ -725,6 +752,53 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": str(e)})
             except Exception as e:
                 return self._send(500, {"error": str(e)})
+        elif path == "/api/diag/trace":
+            try:
+                body = self._read_json()
+            except Exception:
+                return self._send(400, {"error": "请求体不是合法 JSON"})
+            domain = (body.get("domain") or "").strip()
+            if not domain:
+                return self._send(400, {"error": "缺少域名"})
+            try:
+                self._send(200, diag_mgr.trace_domain(domain))
+            except Exception as e:
+                self._send(500, {"error": str(e)})
+        elif path == "/api/diag/backups/restore":
+            try:
+                body = self._read_json()
+            except Exception:
+                return self._send(400, {"error": "请求体不是合法 JSON"})
+            file = (body.get("file") or "").strip()
+            if not file:
+                return self._send(400, {"error": "缺少备份文件名"})
+            try:
+                result = diag_mgr.restore_backup(file)
+                return self._send(200, result)
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            except Exception as e:
+                return self._send(500, {"error": str(e)})
+        elif path == "/api/diag/config":
+            try:
+                body = self._read_json()
+            except Exception:
+                return self._send(400, {"error": "请求体不是合法 JSON"})
+            content = body.get("content")
+            if not isinstance(content, str) or not content.strip():
+                return self._send(400, {"error": "配置内容不能为空"})
+            try:
+                result = diag_mgr.write_config(content)
+                return self._send(200, result)
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            except Exception as e:
+                return self._send(500, {"error": str(e)})
+        elif path == "/api/diag/connections/close-all":
+            try:
+                return self._send(200, diag_mgr.close_all())
+            except Exception as e:
+                return self._send(500, {"error": str(e)})
         elif path.startswith("/api/providers/"):
             m = re.match(r"^/api/providers/(.+)$", path)
             if m:
@@ -786,6 +860,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, result)
             except ValueError as e:
                 return self._send(400, {"error": str(e)})
+            except Exception as e:
+                return self._send(500, {"error": str(e)})
+        m = re.match(r"^/api/diag/connections/(.+)$", path)
+        if m:
+            cid = urllib.parse.unquote(m.group(1))
+            try:
+                result = diag_mgr.close_connection(cid)
+                code = 200 if result.get("ok") else 400
+                return self._send(code, result)
             except Exception as e:
                 return self._send(500, {"error": str(e)})
         self._send(404, {"error": "Not Found"})
