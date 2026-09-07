@@ -110,6 +110,29 @@
   .num { color: var(--dim); font-size: 12px; }
   .ops { display: flex; gap: 4px; flex-wrap: wrap; }
   .hidden { display: none; }
+  .modal-mask {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.6); display: flex;
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 20px; width: 100%; max-width: 620px; max-height: 86vh; overflow-y: auto;
+  }
+  .modal h3 { font-size: 15px; margin-bottom: 12px; }
+  .lbl { display: block; font-size: 12px; color: var(--dim); margin-bottom: 5px; }
+  .txt {
+    width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 13px; outline: none;
+  }
+  .txt:focus { border-color: var(--accent); }
+  .pvViewPre {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; font-size: 12px; line-height: 1.6; max-height: 50vh; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-all; font-family: ui-monospace, Consolas, monospace;
+  }
+  .tag.local { color: var(--ok); border-color: rgba(52,211,153,.35); }
 </style>
 </head>
 <body>
@@ -193,6 +216,20 @@ vmess://  vless://  trojan://  ss://  ssr://  hysteria2://(hy2://)  tuic://  htt
     </div>
 
     <div class="card">
+      <h2>📦 规则集 (rule-providers) <span style="color:var(--dim);font-weight:400;font-size:12px" id="provCount"></span></h2>
+      <div class="hint" style="margin-bottom:10px">规则行 `RULE-SET,名字,目标` 引用的是这里定义的集合。<b>远程库</b>(mrs)自动更新、只读；<b>本地规则集</b>可在线编辑内容——适合放你自己的域名/IP 清单。</div>
+      <table>
+        <thead><tr><th style="width:22%">名称</th><th style="width:70px">类型</th><th style="width:80px">behavior</th><th>来源</th><th style="width:150px">操作</th></tr></thead>
+        <tbody id="provBody"></tbody>
+      </table>
+      <div class="empty" id="provEmpty">加载中…</div>
+      <div class="row">
+        <button class="btn small" onclick="openProvCreate()">➕ 新建本地规则集</button>
+        <span class="hint" style="margin:0">新建后可到上方「添加分流规则」选 RULE-SET 类型引用它</span>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>当前分流规则 <span style="color:var(--dim);font-weight:400;font-size:12px" id="ruleCount"></span></h2>
       <div class="hint" style="margin-bottom:8px">🎯 目标 = 策略组（如 🚀 默认代理 / 🇭🇰 香港节点）或具体节点（如 US-大妈）。DIRECT=直连，REJECT=拦截。</div>
       <table>
@@ -204,6 +241,45 @@ vmess://  vless://  trojan://  ss://  ssr://  hysteria2://(hy2://)  tuic://  htt
   </section>
 
   <div class="footer">mihomo-node-tool · 修改前自动备份配置到 backups/ · 规则改动自动校验(mihomo -t)，失败即回滚 · 需要帮助随时找我</div>
+</div>
+
+<!-- 规则集 新建/编辑 弹窗 -->
+<div class="modal-mask" id="provModal" style="display:none" onclick="if(event.target===this)closeProvModal()">
+  <div class="modal">
+    <h3 id="provModalTitle">➕ 新建本地规则集</h3>
+    <div class="grid2">
+      <div>
+        <label class="lbl">名称（字母/数字/下划线，如 my_list）</label>
+        <input type="text" id="pvName" class="txt" placeholder="my_sites">
+      </div>
+      <div>
+        <label class="lbl">内容类型 behavior</label>
+        <select id="pvBehavior" onchange="pvHelp()">
+          <option value="domain">domain — 每行一个域名</option>
+          <option value="ipcidr">ipcidr — 每行一个 IP 网段</option>
+          <option value="classical">classical — 每行一条完整规则(不带策略组)</option>
+        </select>
+      </div>
+    </div>
+    <div class="hint" id="pvHelpText" style="margin:8px 0"></div>
+    <textarea id="pvLines" style="min-height:180px" placeholder="每行一条，支持 # 注释&#10;例如:&#10;example.com&#10;google.com"></textarea>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn small ghost" onclick="closeProvModal()">取消</button>
+      <button class="btn small" id="pvSaveBtn" onclick="saveProv()">💾 保存并生效</button>
+    </div>
+    <div class="msgs" id="pvMsgs"></div>
+  </div>
+</div>
+
+<!-- 规则集 查看弹窗 -->
+<div class="modal-mask" id="pvViewModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal">
+    <h3 id="pvViewTitle">规则集内容</h3>
+    <pre class="pvViewPre" id="pvViewBody"></pre>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn small ghost" onclick="$('pvViewModal').style.display='none'">关闭</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -373,6 +449,7 @@ async function loadRules() {
   } catch (e) {
     showMsgs($('ruleMsgs'), [{type:'err', text: '加载规则失败: ' + e}]);
   }
+  loadProviders();
 }
 
 function renderTypeSelect(types) {
@@ -580,6 +657,164 @@ async function doRuleDelete(r) {
     await loadRules();
   } catch (e) {
     showMsgs($('ruleMsgs'), [{type:'err', text: String(e)}]);
+  }
+}
+
+/* ---------- 规则集 (rule-providers) ---------- */
+async function loadProviders() {
+  try {
+    const d = await api('GET', '/api/providers');
+    renderProviders(d.providers || []);
+  } catch (e) {
+    showMsgs($('ruleMsgs'), [{ type: 'err', text: '加载规则集失败: ' + e }]);
+  }
+}
+
+function renderProviders(list) {
+  $('provCount').textContent = `(${list.length})`;
+  const tb = $('provBody');
+  tb.innerHTML = '';
+  $('provEmpty').style.display = list.length ? 'none' : 'block';
+  $('provEmpty').textContent = list.length ? '' : '暂无规则集';
+  list.forEach(p => {
+    const tr = document.createElement('tr');
+    const nTd = document.createElement('td');
+    const tag = document.createElement('span');
+    tag.className = 'tag ' + (p.editable ? 'local' : '');
+    tag.textContent = p.editable ? '本地' : '远程';
+    const nm = document.createElement('span');
+    nm.textContent = p.name;
+    nm.style.fontWeight = '500';
+    nTd.append(tag, nm);
+    const tyTd = document.createElement('td');
+    tyTd.className = 'mono'; tyTd.textContent = p.type;
+    const bhTd = document.createElement('td');
+    bhTd.className = 'mono'; bhTd.textContent = p.behavior || (p.format || '');
+    const sTd = document.createElement('td');
+    sTd.className = 'mono';
+    sTd.textContent = p.editable ? (p.path || '') : (p.url || '').replace(/^https?:\/\//, '').slice(0, 52);
+    sTd.title = p.url || p.path || '';
+    const aTd = document.createElement('td');
+    const ops = document.createElement('div');
+    ops.className = 'ops';
+    const view = document.createElement('button');
+    view.className = 'btn mini'; view.textContent = '查看';
+    view.onclick = () => viewProvider(p);
+    ops.appendChild(view);
+    if (p.editable) {
+      const ed = document.createElement('button');
+      ed.className = 'btn mini'; ed.textContent = '编辑';
+      ed.onclick = () => editProvider(p);
+      const del = document.createElement('button');
+      del.className = 'btn mini'; del.textContent = '删除';
+      del.style.color = 'var(--danger)';
+      del.onclick = () => delProvider(p);
+      ops.append(ed, del);
+    }
+    aTd.appendChild(ops);
+    tr.append(nTd, tyTd, bhTd, sTd, aTd);
+    tb.appendChild(tr);
+  });
+}
+
+async function viewProvider(p) {
+  $('pvViewTitle').textContent = `📖 ${p.name}`;
+  const body = $('pvViewBody');
+  if (!p.editable) {
+    body.textContent = '远程规则库 (mrs / 自动更新) — 内容由 MetaCubeX meta-rules-dat 维护，不可在线查看/编辑。\n\nURL: ' + (p.url || '') + '\n更新间隔: ' + (p.interval || '—') + 's';
+    $('pvViewModal').style.display = 'flex';
+    return;
+  }
+  try {
+    const d = await api('GET', '/api/providers/' + encodeURIComponent(p.name));
+    body.textContent = '# behavior: ' + d.behavior + '\n# 路径: ' + d.path + '\n\n' + (d.lines || []).join('\n');
+  } catch (e) {
+    body.textContent = '读取失败: ' + e;
+  }
+  $('pvViewModal').style.display = 'flex';
+}
+
+function openProvCreate() {
+  $('provModalTitle').textContent = '➕ 新建本地规则集';
+  $('pvName').value = '';
+  $('pvName').disabled = false;
+  $('pvLines').value = '';
+  $('pvMsgs').style.display = 'none';
+  $('pvBehavior').value = 'domain';
+  pvHelp();
+  $('provModal').style.display = 'flex';
+  $('pvName').focus();
+}
+
+async function editProvider(p) {
+  try {
+    const d = await api('GET', '/api/providers/' + encodeURIComponent(p.name));
+    $('provModalTitle').textContent = `✏️ 编辑规则集 ${p.name}`;
+    $('pvName').value = d.name;
+    $('pvName').disabled = true;
+    $('pvBehavior').value = d.behavior || 'domain';
+    $('pvLines').value = (d.lines || []).join('\n');
+    $('pvMsgs').style.display = 'none';
+    pvHelp();
+    $('provModal').style.display = 'flex';
+  } catch (e) {
+    showMsgs($('ruleMsgs'), [{ type: 'err', text: String(e) }]);
+  }
+}
+
+function closeProvModal() {
+  $('provModal').style.display = 'none';
+  $('pvMsgs').style.display = 'none';
+}
+
+function pvHelp() {
+  const b = $('pvBehavior').value;
+  const tips = {
+    domain: '🌐 每行一个域名或域名后缀（例: example.com / .google.com）',
+    ipcidr: '📡 每行一个 IP 网段（例: 1.2.3.0/24），保存时自动校验格式',
+    classical: '🧩 每行一条完整规则（例: DOMAIN-SUFFIX,example.com），不带策略组；不允许 MATCH / RULE-SET',
+  };
+  $('pvHelpText').textContent = tips[b] || '';
+}
+
+async function saveProv() {
+  const name = $('pvName').value.trim();
+  const behavior = $('pvBehavior').value;
+  const lines = $('pvLines').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!name) { showMsgs($('pvMsgs'), [{ type: 'err', text: '请填写规则集名称' }]); return; }
+  if (!lines.length) { showMsgs($('pvMsgs'), [{ type: 'err', text: '内容不能为空' }]); return; }
+  const btn = $('pvSaveBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 校验并热加载中…';
+  showMsgs($('pvMsgs'), []);
+  try {
+    const overwrite = $('pvName').disabled;
+    let r;
+    if (overwrite) {
+      r = await api('PUT', '/api/providers/' + encodeURIComponent(name), { behavior, lines });
+    } else {
+      r = await api('POST', '/api/providers', { name, behavior, lines });
+    }
+    const msgs = [{ type: 'ok', text: '✅ ' + (r.message || '已保存') }];
+    if (r.backup) msgs.push({ type: 'info', text: `配置已备份: ${r.backup} | ${r.reload || ''}` });
+    showMsgs($('pvMsgs'), msgs);
+    setTimeout(() => { closeProvModal(); }, 1200);
+    await loadProviders();
+  } catch (e) {
+    showMsgs($('pvMsgs'), [{ type: 'err', text: String(e) }]);
+  } finally {
+    btn.disabled = false; btn.textContent = '💾 保存并生效';
+  }
+}
+
+async function delProvider(p) {
+  if (!confirm(`确定删除本地规则集「${p.name}」？\n⚠️ 若有规则行引用它，需先删除对应规则行`)) return;
+  showMsgs($('ruleMsgs'), []);
+  try {
+    const r = await api('DELETE', '/api/providers/' + encodeURIComponent(p.name));
+    showMsgs($('ruleMsgs'), [{ type: 'ok', text: `🗑 ${r.message || '已删除'}` }]);
+    await loadProviders();
+  } catch (e) {
+    showMsgs($('ruleMsgs'), [{ type: 'err', text: String(e) }]);
   }
 }
 

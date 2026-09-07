@@ -300,6 +300,19 @@ def validate_rule_text(text):
         return text
     if head not in RULE_TYPES:
         raise ValueError(f"未知规则类型「{parts[0]}」，支持: {', '.join(RULE_TYPES)}")
+    if head == "RULE-SET":
+        if len(parts) < 2:
+            raise ValueError("RULE-SET 需要规则集名: RULE-SET,规则集名,目标")
+        rps = (load_cfg(silent=True) or {}).get("rule-providers") or {}
+        if parts[1] not in rps:
+            names = sorted(rps.keys())
+            raise ValueError(f"规则集「{parts[1]}」不存在——可用规则集: {', '.join(names[:8])}{'…' if len(names) > 8 else ''}（也可在「规则集」卡片新建本地规则集）")
+        if len(parts) < 3:
+            raise ValueError("RULE-SET 需要目标: RULE-SET,规则集名,策略组/节点")
+        policy = parts[2]
+        if policy not in rule_targets():
+            raise ValueError(f"目标「{policy}」不存在——可选: {', '.join(rule_targets()[:10])}…")
+        return text
     if len(parts) < 3:
         raise ValueError("规则至少 3 段: 类型,匹配值,目标 (例: DOMAIN-SUFFIX,example.com,🚀 默认代理)")
     policy = parts[2]
@@ -401,6 +414,165 @@ def move_rule(idx, direction):
     return apply_rules_change(mut)
 
 
+# ---------- 规则集(rule-providers)管理 ----------
+# 本地自定义规则集存于 config 目录 rules/custom/<name>.yaml,
+# rule-providers 以 type: file 引用 -> 可独立编辑、mihomo -t 校验、热重载。
+# 远程库(http/mrs)只读展示，不提供编辑。
+PROVIDER_DIR = os.path.join(os.path.dirname(CONFIG_PATH), "rules", "custom")
+CUSTOM_PROVIDER_PREFIX = "custom_"  # 本地自定义规则集统一前缀，便于识别/清理
+PROVIDER_BEHAVIORS = ("domain", "ipcidr", "classical")
+PROVIDER_NAME_RE = re.compile(r"^[A-Za-z0-9_]{2,32}$")
+
+
+def _cfg_providers(cfg):
+    return cfg.setdefault("rule-providers", {})
+
+
+def list_providers():
+    """返回全部 rule-providers: 远程库(只读) + 本地自定义(可编辑)"""
+    cfg = load_cfg()
+    rps = cfg.get("rule-providers") or {}
+    out = []
+    for name, p in rps.items():
+        p = p or {}
+        is_local = p.get("type") == "file"
+        out.append({
+            "name": name,
+            "type": p.get("type", "http"),
+            "behavior": p.get("behavior", ""),
+            "format": p.get("format", ""),
+            "interval": p.get("interval"),
+            "url": p.get("url", ""),
+            "path": p.get("path", ""),
+            "editable": is_local,
+        })
+    out.sort(key=lambda x: (not x["editable"], x["name"]))
+    return out
+
+
+def _provider_file(name):
+    """本地自定义规则集的磁盘路径(相对 config 目录 rules/custom/)"""
+    return os.path.join(PROVIDER_DIR, name + ".yaml")
+
+
+def provider_content(name):
+    """读取规则集内容: 本地 file 型返回行列表; 远程型不可读则抛错"""
+    cfg = load_cfg()
+    p = (cfg.get("rule-providers") or {}).get(name)
+    if not p:
+        raise ValueError(f"规则集「{name}」不存在")
+    if p.get("type") != "file":
+        raise ValueError("远程规则库(mrs/自动更新)内容不可在线编辑——它是自动维护的")
+    path = p.get("path") or ""
+    # path 可能是 ./rules/custom/xx.yaml 相对 config 目录
+    if path.startswith("./"):
+        path = os.path.join(os.path.dirname(CONFIG_PATH), path[2:])
+    if not os.path.isfile(path):
+        raise ValueError(f"规则集文件不存在: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        raw = f.read()
+    lines = []
+    for ln in raw.splitlines():
+        ln = ln.strip()
+        if ln and not ln.startswith(("#", "payload:")):
+            lines.append(ln)
+    return {"name": name, "path": path, "behavior": p.get("behavior", "domain"),
+            "lines": lines}
+
+
+def validate_provider_name(name):
+    if not PROVIDER_NAME_RE.match(name):
+        raise ValueError("规则集名需为 2-32 位字母/数字/下划线")
+    if name.startswith("custom_") and name != name:
+        raise ValueError("非法名称")
+    return name
+
+
+def create_provider(name, behavior, lines, overwrite=False):
+    """新建/更新本地自定义规则集: 写文件 -> rule-providers 登记 -> 校验 -> 热重载"""
+    name = validate_provider_name(name)
+    if behavior not in PROVIDER_BEHAVIORS:
+        raise ValueError(f"behavior 需为: {'/'.join(PROVIDER_BEHAVIORS)}")
+    lines = [ln.strip() for ln in (lines or []) if ln.strip() and not ln.strip().startswith("#")]
+    if not lines:
+        raise ValueError("规则集内容为空——至少需要一行")
+    if behavior == "ipcidr":
+        import ipaddress
+        for ln in lines:
+            try:
+                ipaddress.ip_network(ln.split(",")[0])
+            except Exception:
+                raise ValueError(f"无效 IP 网段: {ln}")
+    if behavior == "classical":
+        for ln in lines:
+            head = ln.split(",")[0].strip().upper()
+            if head in ("MATCH", "RULE-SET"):
+                raise ValueError(f"classical 规则集内不允许 {head} 行: {ln}")
+    # classical 文件行可能已带策略组, 若不带则引用处统一给; 校验仅做基础项
+
+    cfg = load_cfg()
+    rps = _cfg_providers(cfg)
+    existing = name in rps
+    if existing and not overwrite:
+        raise ValueError(f"规则集「{name}」已存在——如需覆盖请用更新接口")
+    if existing and rps[name].get("type") != "file":
+        raise ValueError(f"「{name}」是远程规则库，不能覆盖为本地规则集")
+
+    os.makedirs(PROVIDER_DIR, exist_ok=True)
+    fpath = _provider_file(name)
+    rel = "./rules/custom/" + name + ".yaml"
+    with open(fpath, "w", encoding="utf-8") as f:
+        f.write("# 本地自定义规则集 " + name + " (behavior: " + behavior + ")\n"
+                "# 由 mihomo-node-tool 管理\n")
+        for ln in lines:
+            f.write(ln + "\n")
+
+    rps[name] = {"type": "file", "behavior": behavior, "path": rel}
+    bk = backup_cfg()
+    save_cfg(cfg)
+    code, out = test_config()
+    if code != 0:
+        shutil.copy2(bk, CONFIG_PATH)
+        raise RuntimeError(f"⚠️ 规则集校验未通过，已自动回滚\nmihomo: {out}")
+    how = reload_mihomo()
+    action = "更新" if existing else "创建"
+    return {"message": f"已{action}规则集「{name}」", "backup": bk, "reload": how}
+
+
+def delete_provider(name):
+    """删除本地自定义规则集(同时移除规则行中对该集的引用)"""
+    cfg = load_cfg()
+    rps = cfg.get("rule-providers") or {}
+    p = rps.get(name)
+    if not p:
+        raise ValueError(f"规则集「{name}」不存在")
+    if p.get("type") != "file":
+        raise ValueError(f"「{name}」是远程规则库，不可删除(自动更新维护)")
+
+    rules = cfg.get("rules") or []
+    refs = [r for r in rules
+            if str(r).strip().upper().startswith("RULE-SET," + name.upper() + ",")]
+    if refs:
+        raise ValueError(f"规则集中仍有 {len(refs)} 条引用未移除，请先删除对应规则行:\n"
+                         + "\n".join(refs[:3]))
+
+    # 删除磁盘文件 + 移除登记
+    fpath = _provider_file(name)
+    try:
+        os.remove(fpath)
+    except OSError:
+        pass
+    del rps[name]
+    bk = backup_cfg()
+    save_cfg(cfg)
+    code, out = test_config()
+    if code != 0:
+        shutil.copy2(bk, CONFIG_PATH)
+        raise RuntimeError(f"⚠️ 校验未通过，已自动回滚\nmihomo: {out}")
+    how = reload_mihomo()
+    return {"message": f"已删除规则集「{name}」", "backup": bk, "reload": how}
+
+
 # ---------- HTTP 服务 ----------
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
@@ -453,6 +625,20 @@ class Handler(BaseHTTPRequestHandler):
             groups = [g.get("name") for g in cfg.get("proxy-groups") or []]
             self._send(200, {"rules": rules, "targets": rule_targets(),
                              "groups": groups, "types": RULE_TYPES})
+        elif path == "/api/providers":
+            self._send(200, {"providers": list_providers()})
+        elif path.startswith("/api/providers/"):
+            m = re.match(r"^/api/providers/(.+)$", path)
+            if m:
+                name = urllib.parse.unquote(m.group(1))
+                try:
+                    self._send(200, provider_content(name))
+                except ValueError as e:
+                    self._send(400, {"error": str(e)})
+                except Exception as e:
+                    self._send(500, {"error": str(e)})
+            else:
+                self._send(404, {"error": "Not Found"})
         else:
             self._send(404, {"error": "Not Found"})
 
@@ -519,6 +705,46 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as e:
                     return self._send(500, {"error": str(e)})
             self._send(404, {"error": "Not Found"})
+        elif path == "/api/providers":
+            try:
+                body = self._read_json()
+            except Exception:
+                return self._send(400, {"error": "请求体不是合法 JSON"})
+            name = (body.get("name") or "").strip()
+            behavior = (body.get("behavior") or "domain").strip()
+            lines = body.get("lines")
+            if not name:
+                return self._send(400, {"error": "缺少规则集名称"})
+            if not isinstance(lines, list):
+                return self._send(400, {"error": "lines 需为数组"})
+            try:
+                result = create_provider(name, behavior, lines,
+                                         overwrite=body.get("overwrite") is True)
+                return self._send(200, result)
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            except Exception as e:
+                return self._send(500, {"error": str(e)})
+        elif path.startswith("/api/providers/"):
+            m = re.match(r"^/api/providers/(.+)$", path)
+            if m:
+                name = urllib.parse.unquote(m.group(1))
+                try:
+                    body = self._read_json()
+                except Exception:
+                    return self._send(400, {"error": "请求体不是合法 JSON"})
+                behavior = (body.get("behavior") or "domain").strip()
+                lines = body.get("lines")
+                if not isinstance(lines, list):
+                    return self._send(400, {"error": "lines 需为数组"})
+                try:
+                    result = create_provider(name, behavior, lines, overwrite=True)
+                    return self._send(200, result)
+                except ValueError as e:
+                    return self._send(400, {"error": str(e)})
+                except Exception as e:
+                    return self._send(500, {"error": str(e)})
+            self._send(404, {"error": "Not Found"})
         elif path.startswith("/api/daemon/"):
             # /api/daemon/install|update|start|restart|stop|uninstall
             action = path.rsplit("/", 1)[-1]
@@ -552,6 +778,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": str(e)})
             except Exception as e:
                 return self._send(500, {"error": str(e)})
+        m = re.match(r"^/api/providers/(.+)$", path)
+        if m:
+            name = urllib.parse.unquote(m.group(1))
+            try:
+                result = delete_provider(name)
+                return self._send(200, result)
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            except Exception as e:
+                return self._send(500, {"error": str(e)})
         self._send(404, {"error": "Not Found"})
 
     def do_PUT(self):
@@ -567,6 +803,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "规则内容不能为空"})
             try:
                 result = update_rule(int(m.group(1)), text)
+                return self._send(200, result)
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            except Exception as e:
+                return self._send(500, {"error": str(e)})
+        m = re.match(r"^/api/providers/(.+)$", path)
+        if m:
+            name = urllib.parse.unquote(m.group(1))
+            try:
+                body = self._read_json()
+            except Exception:
+                return self._send(400, {"error": "请求体不是合法 JSON"})
+            behavior = (body.get("behavior") or "domain").strip()
+            lines = body.get("lines")
+            if not isinstance(lines, list):
+                return self._send(400, {"error": "lines 需为数组"})
+            try:
+                result = create_provider(name, behavior, lines, overwrite=True)
                 return self._send(200, result)
             except ValueError as e:
                 return self._send(400, {"error": str(e)})

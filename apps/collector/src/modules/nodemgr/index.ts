@@ -195,6 +195,71 @@ const nodemgrController: FastifyPluginAsync = async (fastify) => {
     );
     return reply.status(status).send(payload);
   });
+
+  // ---- 规则集(rule-providers)代理 ----
+  // GET /api/nt/providers -> 规则集清单(本地可编辑/远程只读)
+  fastify.get('/providers', async (_request, reply) => {
+    const { status, payload } = await proxy('GET', 'providers');
+    return reply.status(status).send(payload);
+  });
+
+  // GET /api/nt/providers/:name -> 本地规则集内容
+  fastify.get<{ Params: { name: string } }>('/providers/:name', async (request, reply) => {
+    const { status, payload } = await proxy(
+      'GET',
+      `providers/${encodeURIComponent(request.params.name)}`,
+    );
+    return reply.status(status).send(payload);
+  });
+
+  // POST /api/nt/providers  body: { name, behavior, lines }
+  fastify.post<{ Body: { name?: string; behavior?: string; lines?: string[] } }>(
+    '/providers',
+    async (request, reply) => {
+      const body = (request.body ?? {}) as { name?: string; behavior?: string; lines?: string[] };
+      if (!body.name || typeof body.name !== 'string' || !body.name.trim()) {
+        return reply.status(400).send({ error: 'name is required' });
+      }
+      if (!Array.isArray(body.lines)) {
+        return reply.status(400).send({ error: 'lines must be an array' });
+      }
+      const { status, payload } = await proxy('POST', 'providers', {
+        name: body.name,
+        behavior: typeof body.behavior === 'string' ? body.behavior : 'domain',
+        lines: body.lines,
+      });
+      return reply.status(status).send(payload);
+    },
+  );
+
+  // PUT /api/nt/providers/:name  body: { behavior, lines }
+  fastify.put<{ Params: { name: string }; Body: { behavior?: string; lines?: string[] } }>(
+    '/providers/:name',
+    async (request, reply) => {
+      const body = (request.body ?? {}) as { behavior?: string; lines?: string[] };
+      if (!Array.isArray(body.lines)) {
+        return reply.status(400).send({ error: 'lines must be an array' });
+      }
+      const { status, payload } = await proxy(
+        'PUT',
+        `providers/${encodeURIComponent(request.params.name)}`,
+        {
+          behavior: typeof body.behavior === 'string' ? body.behavior : 'domain',
+          lines: body.lines,
+        },
+      );
+      return reply.status(status).send(payload);
+    },
+  );
+
+  // DELETE /api/nt/providers/:name
+  fastify.delete<{ Params: { name: string } }>('/providers/:name', async (request, reply) => {
+    const { status, payload } = await proxy(
+      'DELETE',
+      `providers/${encodeURIComponent(request.params.name)}`,
+    );
+    return reply.status(status).send(payload);
+  });
 };
 
 export default nodemgrController;
