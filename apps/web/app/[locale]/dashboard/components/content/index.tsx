@@ -15,6 +15,7 @@ import { InteractiveRuleStats } from "@/components/features/rules";
 import { HealthContent } from "@/components/features/health";
 import { NodesContent } from "@/components/features/nodes";
 import { DaemonContent } from "@/components/features/daemon";
+import { RuleCfgContent } from "@/components/features/rulecfg";
 import { WorldTrafficMap, CountryTrafficList } from "@/components/features/countries";
 import { DomainsTable, IPsTable } from "@/components/features/stats/table";
 import { Button } from "@/components/ui/button";
@@ -394,6 +395,8 @@ export function Content({
         return <NodesContent />;
       case "daemon":
         return <DaemonContent />;
+      case "rulecfg":
+        return <RuleCfgContent />;
       default:
         return (
           <OverviewContent

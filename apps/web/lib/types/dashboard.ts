@@ -22,4 +22,5 @@ export type TabId =
   | "network"
   | "health"
   | "nodes"
-  | "daemon";
+  | "daemon"
+  | "rulecfg";

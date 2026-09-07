@@ -20,6 +20,7 @@ import {
   HeartPulse,
   PlugZap,
   ServerCog,
+  ListTree,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,7 @@ const NAV_ITEMS = [
   { id: "health", icon: HeartPulse },
   { id: "nodes", icon: PlugZap },
   { id: "daemon", icon: ServerCog },
+  { id: "rulecfg", icon: ListTree },
 ];
 
 export function Navigation({

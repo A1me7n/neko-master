@@ -132,6 +132,69 @@ const nodemgrController: FastifyPluginAsync = async (fastify) => {
       return reply.status(status).send(payload);
     },
   );
+
+  // ---- 分流规则 CRUD 代理 (node-tool /api/rules*) ----
+  // GET /api/nt/rules -> { rules: [{index,text,match,rule_set}], targets, groups, types }
+  fastify.get('/rules', async (_request, reply) => {
+    const { status, payload } = await proxy('GET', 'rules');
+    return reply.status(status).send(payload);
+  });
+
+  // POST /api/nt/rules  body: { text, position?: 'top' | 'bottom' }
+  fastify.post<{ Body: { text?: string; position?: string } }>(
+    '/rules',
+    async (request, reply) => {
+      const body = (request.body ?? {}) as { text?: string; position?: string };
+      if (!body.text || typeof body.text !== 'string' || !body.text.trim()) {
+        return reply.status(400).send({ error: 'text is required' });
+      }
+      const { status, payload } = await proxy('POST', 'rules', {
+        text: body.text,
+        position: body.position === 'top' ? 'top' : 'bottom',
+      });
+      return reply.status(status).send(payload);
+    },
+  );
+
+  // PUT /api/nt/rules/:index  body: { text }
+  fastify.put<{ Params: { index: string }; Body: { text?: string } }>(
+    '/rules/:index',
+    async (request, reply) => {
+      const body = (request.body ?? {}) as { text?: string };
+      if (!body.text || typeof body.text !== 'string' || !body.text.trim()) {
+        return reply.status(400).send({ error: 'text is required' });
+      }
+      const { status, payload } = await proxy(
+        'PUT',
+        `rules/${encodeURIComponent(request.params.index)}`,
+        { text: body.text },
+      );
+      return reply.status(status).send(payload);
+    },
+  );
+
+  // POST /api/nt/rules/:index/move  body: { direction: 'up' | 'down' }
+  fastify.post<{ Params: { index: string }; Body: { direction?: string } }>(
+    '/rules/:index/move',
+    async (request, reply) => {
+      const body = (request.body ?? {}) as { direction?: string };
+      const { status, payload } = await proxy(
+        'POST',
+        `rules/${encodeURIComponent(request.params.index)}/move`,
+        { direction: body.direction === 'down' ? 'down' : 'up' },
+      );
+      return reply.status(status).send(payload);
+    },
+  );
+
+  // DELETE /api/nt/rules/:index
+  fastify.delete<{ Params: { index: string } }>('/rules/:index', async (request, reply) => {
+    const { status, payload } = await proxy(
+      'DELETE',
+      `rules/${encodeURIComponent(request.params.index)}`,
+    );
+    return reply.status(status).send(payload);
+  });
 };
 
 export default nodemgrController;
