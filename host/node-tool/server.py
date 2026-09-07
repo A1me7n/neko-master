@@ -264,6 +264,143 @@ def switch_selection(group, name):
     return {"error": msg}
 
 
+# ---------- 规则管理 ----------
+RULE_TYPES = [
+    "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "DOMAIN-REGEX",
+    "GEOIP", "GEOSITE", "IP-CIDR", "IP-CIDR6", "PROCESS-NAME", "RULE-SET",
+]
+NO_RESOLVE_TYPES = ("IP-CIDR", "IP-CIDR6", "GEOIP")
+
+
+def rule_targets():
+    """规则可指向的目标: 策略组 + 节点 + 内置出口"""
+    cfg = load_cfg(silent=True) or {}
+    names = [g.get("name") for g in cfg.get("proxy-groups") or [] if g.get("name")]
+    names += [p.get("name") for p in cfg.get("proxies") or [] if p.get("name")]
+    for extra in ("DIRECT", "REJECT"):
+        if extra not in names:
+            names.append(extra)
+    return names
+
+
+def get_rules():
+    cfg = load_cfg()
+    return list(cfg.get("rules") or [])
+
+
+def validate_rule_text(text):
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("规则不能为空")
+    parts = [p.strip() for p in text.split(",")]
+    head = parts[0].upper()
+    if head == "MATCH":
+        if len(parts) < 2:
+            raise ValueError("MATCH 规则需要目标: MATCH,策略组")
+        return text
+    if head not in RULE_TYPES:
+        raise ValueError(f"未知规则类型「{parts[0]}」，支持: {', '.join(RULE_TYPES)}")
+    if len(parts) < 3:
+        raise ValueError("规则至少 3 段: 类型,匹配值,目标 (例: DOMAIN-SUFFIX,example.com,🚀 默认代理)")
+    policy = parts[2]
+    if policy not in rule_targets():
+        raise ValueError(f"目标「{policy}」不存在——可选: {', '.join(rule_targets()[:10])}…")
+    if head in NO_RESOLVE_TYPES:
+        for extra in parts[3:]:
+            if extra != "no-resolve":
+                raise ValueError(f"多余参数「{extra}」: {head} 规则只允许追加 no-resolve")
+    return text
+
+
+def _is_match(r):
+    return str(r).strip().upper().startswith("MATCH")
+
+
+def _match_idx(rules):
+    for i, r in enumerate(rules):
+        if _is_match(r):
+            return i
+    return None
+
+
+def test_config():
+    """mihomo -t 校验配置合法性 -> (code, output)"""
+    try:
+        r = subprocess.run(["mihomo", "-t", "-f", CONFIG_PATH],
+                           capture_output=True, text=True, timeout=40)
+        return r.returncode, (r.stdout + r.stderr).strip()[-400:]
+    except Exception as e:
+        return 1, str(e)
+
+
+def apply_rules_change(mutator):
+    """通用流程: 备份 -> 改 -> mihomo -t 校验 -> 热重载; 校验失败自动回滚(不重载)"""
+    cfg = load_cfg()
+    rules = cfg.setdefault("rules", [])
+    msg = mutator(rules)
+    bk = backup_cfg()
+    save_cfg(cfg)
+    code, out = test_config()
+    if code != 0:
+        shutil.copy2(bk, CONFIG_PATH)  # 文件回滚; mihomo 未 reload, 运行态不变
+        raise RuntimeError(f"⚠️ 规则校验未通过，已自动回滚\nmihomo: {out}")
+    how = reload_mihomo()
+    return {"backup": bk, "reload": how, "message": msg}
+
+
+def add_rule(text, position="bottom"):
+    text = validate_rule_text(text)
+    def mut(rules):
+        if text in [str(x).strip() for x in rules]:
+            raise ValueError("该规则已存在，无需重复添加")
+        mi = _match_idx(rules)
+        if position == "top":
+            rules.insert(0, text)
+        else:
+            rules.insert(mi if mi is not None else len(rules), text)
+        return "已添加规则" + ("(置顶)" if position == "top" else "(兜底前)")
+    return apply_rules_change(mut)
+
+
+def update_rule(idx, text):
+    text = validate_rule_text(text)
+    def mut(rules):
+        if idx < 0 or idx >= len(rules):
+            raise ValueError("规则序号越界")
+        if _is_match(rules[idx]):
+            raise ValueError("MATCH 兜底规则不可修改")
+        rules[idx] = text
+        return f"已更新第 {idx + 1} 条规则"
+    return apply_rules_change(mut)
+
+
+def delete_rule(idx):
+    def mut(rules):
+        if idx < 0 or idx >= len(rules):
+            raise ValueError("规则序号越界")
+        if _is_match(rules[idx]):
+            raise ValueError("MATCH 兜底规则不可删除")
+        removed = rules.pop(idx)
+        return f"已删除: {removed}"
+    return apply_rules_change(mut)
+
+
+def move_rule(idx, direction):
+    def mut(rules):
+        if idx < 0 or idx >= len(rules):
+            raise ValueError("规则序号越界")
+        if _is_match(rules[idx]):
+            raise ValueError("MATCH 兜底规则不可移动")
+        j = idx - 1 if direction == "up" else idx + 1
+        if j < 0 or j >= len(rules):
+            raise ValueError("已在边界，无法继续移动")
+        if _is_match(rules[j]):
+            raise ValueError("不能越过 MATCH 兜底规则")
+        rules[idx], rules[j] = rules[j], rules[idx]
+        return f"已移动: {rules[j]} ↔ {rules[idx]}"
+    return apply_rules_change(mut)
+
+
 # ---------- HTTP 服务 ----------
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
@@ -308,6 +445,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, daemon_status_all())
             except Exception as e:
                 self._send(500, {"error": str(e)})
+        elif path == "/api/rules":
+            cfg = load_cfg(silent=True) or {}
+            rules = [{"index": i, "text": r, "match": _is_match(r),
+                      "rule_set": str(r).strip().upper().startswith("RULE-SET")}
+                     for i, r in enumerate(get_rules())]
+            groups = [g.get("name") for g in cfg.get("proxy-groups") or []]
+            self._send(200, {"rules": rules, "targets": rule_targets(),
+                             "groups": groups, "types": RULE_TYPES})
         else:
             self._send(404, {"error": "Not Found"})
 
@@ -343,6 +488,37 @@ class Handler(BaseHTTPRequestHandler):
             if not name:
                 return self._send(400, {"error": "缺少节点名称"})
             return self._send(200, switch_selection(group, name))
+        elif path == "/api/rules":
+            try:
+                body = self._read_json()
+            except Exception:
+                return self._send(400, {"error": "请求体不是合法 JSON"})
+            text = (body.get("text") or "").strip()
+            if not text:
+                return self._send(400, {"error": "规则内容不能为空"})
+            try:
+                result = add_rule(text, position=body.get("position", "bottom"))
+                return self._send(200, result)
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            except Exception as e:
+                return self._send(500, {"error": str(e)})
+        elif path.startswith("/api/rules/"):
+            m = re.match(r"^/api/rules/(\d+)/move$", path)
+            if m:
+                try:
+                    body = self._read_json()
+                except Exception:
+                    return self._send(400, {"error": "请求体不是合法 JSON"})
+                try:
+                    result = move_rule(int(m.group(1)),
+                                       direction=body.get("direction", "up"))
+                    return self._send(200, result)
+                except ValueError as e:
+                    return self._send(400, {"error": str(e)})
+                except Exception as e:
+                    return self._send(500, {"error": str(e)})
+            self._send(404, {"error": "Not Found"})
         elif path.startswith("/api/daemon/"):
             # /api/daemon/install|update|start|restart|stop|uninstall
             action = path.rsplit("/", 1)[-1]
@@ -367,6 +543,35 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             name = urllib.parse.unquote(m.group(1))
             return self._send(200, delete_node(name))
+        m = re.match(r"^/api/rules/(\d+)$", path)
+        if m:
+            try:
+                result = delete_rule(int(m.group(1)))
+                return self._send(200, result)
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            except Exception as e:
+                return self._send(500, {"error": str(e)})
+        self._send(404, {"error": "Not Found"})
+
+    def do_PUT(self):
+        path = urllib.parse.urlparse(self.path).path
+        m = re.match(r"^/api/rules/(\d+)$", path)
+        if m:
+            try:
+                body = self._read_json()
+            except Exception:
+                return self._send(400, {"error": "请求体不是合法 JSON"})
+            text = (body.get("text") or "").strip()
+            if not text:
+                return self._send(400, {"error": "规则内容不能为空"})
+            try:
+                result = update_rule(int(m.group(1)), text)
+                return self._send(200, result)
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            except Exception as e:
+                return self._send(500, {"error": str(e)})
         self._send(404, {"error": "Not Found"})
 
     def _send_static(self):
