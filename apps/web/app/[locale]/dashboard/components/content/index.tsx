@@ -16,6 +16,8 @@ import { HealthContent } from "@/components/features/health";
 import { NodesContent } from "@/components/features/nodes";
 import { DaemonContent } from "@/components/features/daemon";
 import { RuleCfgContent } from "@/components/features/rulecfg";
+import { DiagContent } from "@/components/features/diag";
+import { OpsContent } from "@/components/features/ops";
 import { WorldTrafficMap, CountryTrafficList } from "@/components/features/countries";
 import { DomainsTable, IPsTable } from "@/components/features/stats/table";
 import { Button } from "@/components/ui/button";
@@ -397,6 +399,10 @@ export function Content({
         return <DaemonContent />;
       case "rulecfg":
         return <RuleCfgContent />;
+      case "diag":
+        return <DiagContent />;
+      case "ops":
+        return <OpsContent />;
       default:
         return (
           <OverviewContent

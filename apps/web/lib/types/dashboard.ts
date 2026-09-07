@@ -23,4 +23,6 @@ export type TabId =
   | "health"
   | "nodes"
   | "daemon"
-  | "rulecfg";
+  | "rulecfg"
+  | "diag"
+  | "ops";

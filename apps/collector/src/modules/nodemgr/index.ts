@@ -25,12 +25,13 @@ const TIMEOUT_MS = 20_000;
 
 async function proxy(
   method: string,
-  upstreamPath: string,
+  upstreamPath: string, // 含可选的 query string，如 'diag/connections?limit=50'
   body?: unknown,
+  timeoutMs: number = TIMEOUT_MS,
 ): Promise<{ status: number; payload: unknown }> {
   const url = `${NODE_TOOL_URL}/api/${upstreamPath}`;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       method,
@@ -257,6 +258,26 @@ const nodemgrController: FastifyPluginAsync = async (fastify) => {
     const { status, payload } = await proxy(
       'DELETE',
       `providers/${encodeURIComponent(request.params.name)}`,
+    );
+    return reply.status(status).send(payload);
+  });
+
+  // ---- 诊断/运维 (diag) 通配代理: /api/nt/diag/* -> node-tool /api/diag/*
+  // 覆盖: egress/speed/trace/connections/backups/config (含 query 与路径参数)
+  const DIAG_TIMEOUT_MS = 60_000; // 测速/追踪较慢, 放宽超时
+  fastify.all('/diag/*', async (request, reply) => {
+    const rest = String((request.params as Record<string, string>)['*'] ?? '');
+    const rawUrl = request.raw.url ?? '';
+    const qIdx = rawUrl.indexOf('?');
+    const query = qIdx >= 0 ? rawUrl.slice(qIdx) : '';
+    const pathSegs = rest.split('/').filter(Boolean).map((s) => encodeURIComponent(s));
+    const upstream = `diag/${pathSegs.join('/')}${query}`;
+    const body = request.body !== undefined && request.body !== null ? request.body : undefined;
+    const { status, payload } = await proxy(
+      request.method,
+      upstream,
+      body as Record<string, unknown> | undefined,
+      DIAG_TIMEOUT_MS,
     );
     return reply.status(status).send(payload);
   });
