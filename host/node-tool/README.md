@@ -27,8 +27,9 @@ WorkingDirectory=/opt/mihomo-node-tool
 Environment=MIHOMO_CONFIG=/root/.config/mihomo/config.yaml
 Environment=MIHOMO_API=http://127.0.0.1:9090
 Environment=TOOL_PORT=8008
-Environment=HTTP_PROXY=http://10.10.10.105:10810
-Environment=HTTPS_PROXY=http://10.10.10.105:10810
+# 如需经 HTTP 代理访问外网(如下载 GitHub release)，取消注释并按你的网络填写:
+# Environment=HTTP_PROXY=http://127.0.0.1:7890
+# Environment=HTTPS_PROXY=http://127.0.0.1:7890
 Environment=NO_PROXY=localhost,127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 Restart=always
 RestartSec=3
